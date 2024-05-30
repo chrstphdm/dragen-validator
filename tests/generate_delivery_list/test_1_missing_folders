@@ -1,0 +1,58 @@
+
+setup_suite(){
+    if [ -z "${SCRIPT_PATH}" ]; then
+        SCRIPT_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/generate_delivery_list.sh"
+    fi
+
+}
+
+function setup() {
+    test_data_path=$(mktemp -d --suffix "_TEST_1_BASICS")
+    sample_id="420"
+    current_uuid=$(uuidgen)
+    execution_day=$(date "+%Y%m%d")
+    dropbox_uuid="${sample_id}_${current_uuid}_${execution_day}"
+    data_dir="${test_data_path}/${sample_id}"
+    
+    mkdir -p "${data_dir}/DROPBOX"
+    mkdir -p "${data_dir}/DELIVERED"
+    mkdir -p "${data_dir}/REJECTED"
+    mkdir -p "${data_dir}/PROVIDER_FLAGS"
+    mkdir -p "${data_dir}/MY_ORG_FLAGS"
+
+    mkdir -p "${data_dir}/DROPBOX/${dropbox_uuid}"
+    touch "${data_dir}/PROVIDER_FLAGS/${dropbox_uuid}.LEGACY"
+}
+
+teardown(){
+    rm -rf "${test_data_path}" 
+}
+
+test_all_ok(){
+    assert "DATA_ROOT_PATH=${data_dir} ${SCRIPT_PATH}"
+}
+
+test_missing_dropbox(){
+    rm -rf "${data_dir}/DROPBOX"
+    assert_fail "DATA_ROOT_PATH=${data_dir} ${SCRIPT_PATH}"
+}
+
+test_missing_delivered(){
+    rm -rf "${data_dir}/DELIVERED"
+    assert_fail "DATA_ROOT_PATH=${data_dir} ${SCRIPT_PATH}"
+}
+
+test_missing_rejected(){
+    rm -rf "${data_dir}/REJECTED"
+    assert_fail "DATA_ROOT_PATH=${data_dir} ${SCRIPT_PATH}"
+}
+
+test_missing_PROVIDER_flags(){
+    rm -rf "${data_dir}/PROVIDER_FLAGS"
+    assert_fail "DATA_ROOT_PATH=${data_dir} ${SCRIPT_PATH}"
+}
+
+test_missing_MY_ORG_flags(){
+    rm -rf "${data_dir}/MY_ORG_FLAGS"
+    assert_fail "DATA_ROOT_PATH=${data_dir} ${SCRIPT_PATH}"
+}

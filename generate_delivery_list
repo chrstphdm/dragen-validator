@@ -1,0 +1,197 @@
+#!/bin/bash
+
+############################################################
+# DESCRIPTION
+#   This script performs initial checks and processes files across multiple directories
+#   based on specified regex patterns. It ensures variables and paths are correct and
+#   generates a TSV formatted output.
+#
+#   Steps:
+#   - Checks DEBUG and NO_HEADER variables, validates REGEX file.
+#   - Loads the correct ENV file (tests.env or production.env) and verifies paths.
+#   - Scans PROVIDER_FLAGS_PATH for files matching regex ".*_[0-9a-fA-F-]+_[0-9]{8}.(LEGACY|PASS|FORCED)".
+#     Marks empty files with "FORCED" suffix as PROVIDER_TO_CHECK:FLAG_FILE_EMPTY.
+#   - Scans MY_ORG_FLAGS_PATH for files matching regex ".*_[0-9a-fA-F-]+_[0-9]{8}.(DELIVERED|TO_REVIEW|REJECTED)".
+#   - Scans DROPBOX_PATH, DELIVERED_PATH, and REJECTED_PATH for folders matching regex ".*_[0-9a-fA-F-]+_[0-9]{8}".
+#   - The results are saved in five temporary files.
+#   - Uses an AWK script to cross-reference data from the temporary files against the REGEX file and outputs the results.
+#
+# INPUT
+#   No input files expected.
+#   ENV variables:
+#   - DEBUG: If set to 1, keeps temporary files and lists paths in stderr. [0|1] Default: 0
+#   - NO_HEADER: If set to 1, omits the TSV header in stdout. [0|1] Default: 0
+#
+# OUTPUT
+#   - stdout: TSV formatted output, optionally without header.
+#   - stderr: Lists temporary file paths if DEBUG is set to 1.
+#   - Temporarily generated files which are handled based on DEBUG settings.
+# 
+# USAGE EXAMPLES
+#   Below are several usage examples demonstrating how to run the 'generate_delivery_list' script 
+#   under different configurations and how to handle outputs effectively.
+# 1. Standard Usage:
+#    Runs the script under normal conditions. Both stdout and stderr are combined by default.
+#       generate_delivery_list
+#
+# 2. Debug Mode:
+#    Enables debug mode which retains temporary files for further inspection and outputs additional 
+#    debug information to stderr.
+#       DEBUG=1 generate_delivery_list
+#
+# 3. Suppress Header:
+#    Executes the script without printing the header in the stdout, useful for appending results to 
+#    an existing file. Stdout and stderr are still combined.
+#       NO_HEADER=1 generate_delivery_list
+#
+# 4. Separate Stdout and Stderr:
+#    Redirects stdout to 'delivery_list.tsv' and stderr to 'error_list.tsv', effectively separating output 
+#    and error messages into distinct files.
+#       generate_delivery_list > delivery_list.tsv 2> error_list.tsv
+#
+# 5. Ignore Stdout:
+#    Ignores the standard output and redirects all errors to stderr which can be useful for troubleshooting 
+#    without affecting output files.
+#       generate_delivery_list 2>&1 >/dev/null
+#
+# 6. Ignore Stderr:
+#    Ignores error messages and redirects the output to 'delivery_list.tsv', suitable when errors are not critical 
+#    or expected to be absent.
+#       generate_delivery_list > delivery_list.tsv 2>/dev/null
+#
+# USAGE EXAMPLES WITH PSPG
+#   These examples demonstrate how to use the 'pspg --tsv' command to display outputs from 
+#   the 'generate_delivery_list' script in a more user-friendly, paginated format.
+#
+# 1. Display Stdout Using PSPG:
+#    Pipes the standard output of the script directly into 'pspg --tsv', allowing for interactive viewing of the results.
+#       generate_delivery_list | pspg --tsv
+#
+# 2. Display Both Stdout and Stderr Using PSPG:
+#    Combines stdout and stderr, then pipes the combined output into 'pspg --tsv'. This is useful for viewing 
+#    both results and error messages interactively.
+#       generate_delivery_list 2>&1 | pspg --tsv
+#
+# 3. Display Stderr Only Using PSPG:
+#    Redirects stderr to stdout and pipes it to 'pspg --tsv', enabling interactive viewing of error messages alone.
+#       generate_delivery_list 2>&1 >/dev/null | pspg --tsv
+#
+# 4. Debug Mode with PSPG:
+#    Runs the script in debug mode, and pipes both output and debug information into 'pspg --tsv' for detailed examination.
+#       DEBUG=1 generate_delivery_list 2>&1 | pspg --tsv
+#
+############################################################
+
+#####################################################
+## start with some ENV variables verifications
+if [ -z "${DEBUG}" ]; then
+    DEBUG=0
+elif [ "${DEBUG}" -ne 1 ] && [ "${DEBUG}" -ne 0 ]; then
+    echo "ERROR: DEBUG value [${DEBUG}] is not 0|1. Can not continue."
+    exit 1
+fi
+
+if [ "${NO_HEADER}" != "" ] && [ "${NO_HEADER}" -ne 1 ] && [ "${NO_HEADER}" -ne 0 ]; then
+    echo "ERROR: NO_HEADER value [${NO_HEADER}] is not 0|1. Can not continue."
+    exit 1
+fi
+
+#####################################################
+## now we need to check where we are
+if [ -z "${DRAGEN_VALIDATOR_DIR}" ]; then
+    DRAGEN_VALIDATOR_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
+fi
+
+#####################################################
+## let's check if the REGEX file is OK
+REGEX_FILE="${DRAGEN_VALIDATOR_DIR}/assets/regex.tsv"
+if [[ ! -e "${REGEX_FILE}" ]]; then
+    echo "ERROR: REGEX file [${REGEX_FILE}] is not available. Please, contact the administrator." >&2
+    exit 1
+fi
+
+#####################################################
+# loading env variables 
+if [[ $(pwd) =~ [Tt][Ee][Ss][Tt][Ss]? ]]; then
+    source "${DRAGEN_VALIDATOR_DIR}/assets/tests.env"
+else
+    source "${DRAGEN_VALIDATOR_DIR}/assets/production.env"
+fi
+
+#####################################################
+## just some additional verifications
+env_vars=("DATA_ROOT_PATH" "RESULTS_ROOT_PATH" "PROVIDER_FLAGS_PATH" "DROPBOX_PATH" "MY_ORG_FLAGS_PATH" "DELIVERED_PATH" "REJECTED_PATH" "APPLICATION_TMP_DATA_PATH")
+for var in "${env_vars[@]}"; do
+    if [ -z "${!var}" ]; then
+        echo "ERROR: Environment variable [${var}] (${!var}) is not correctly initialized. Contact the administrator." >&2
+        exit 1
+    fi
+    if [ ! -d "${!var}" ]; then
+        echo "ERROR: Folder [${!var}] is not available. Contact the administrator." >&2
+        exit 1
+    fi
+done
+
+#####################################################
+## time to start
+timestamp=$(date +"%Y%m%d_%H%M%S")
+uuid=$(uuidgen)
+
+#####################################################
+## let's get all the PROVIDER_FLAGS
+PROVIDER_flags_list="${APPLICATION_TMP_DATA_PATH}/tmp.${uuid}_PROVIDER_FLAGS.list"
+find -L "${PROVIDER_FLAGS_PATH}" -maxdepth 1 -type f -regextype posix-extended -regex ".*_[0-9a-fA-F-]+_[0-9]{8}.(LEGACY|PASS|FORCED)" | while IFS= read -r file_path; do
+    suffix=$(echo "$file_path" | rev | cut -d'.' -f1 | rev) 
+
+    if [ "$suffix" == "FORCED" ]; then
+        awk 'NF{exit 1}' "$file_path" # help to manage empty files and files with only empty lines
+        if [ $? -eq 1 ]; then
+            echo -e "$file_path\t\t$(awk '{ printf "%s ", $0 }' "$file_path")" >> "$PROVIDER_flags_list"
+        else
+            echo -e "$file_path\tPROVIDER_TO_CHECK:FLAG_FILE_EMPTY\tReason in the FORCED FLAG_FILE is missing">> "$PROVIDER_flags_list"
+        fi
+    else
+        echo "$file_path" >> "$PROVIDER_flags_list"
+    fi
+done
+
+#####################################################
+## now get the MY_ORG_FLAGS
+MY_ORG_flags_list="${APPLICATION_TMP_DATA_PATH}/tmp.${uuid}_MY_ORG_FLAGS.list"
+find -L "${MY_ORG_FLAGS_PATH}"  -maxdepth 1 -type f -regextype posix-extended -regex ".*_[0-9a-fA-F-]+_[0-9]{8}.(DELIVERED|TO_REVIEW|REJECTED)" > "${MY_ORG_flags_list}"
+
+#####################################################
+## now get the DROPBOX_UUIDs from DROPBOX
+dropbox_uuid_path_list="${APPLICATION_TMP_DATA_PATH}/tmp.${uuid}_DROPBOX_UUID_PATHS.list"
+find -L "${DROPBOX_PATH}"  -maxdepth 1 -type d -regextype posix-extended -regex ".*_[0-9a-fA-F-]+_[0-9]{8}" > "${dropbox_uuid_path_list}"
+
+#####################################################
+## now from the DELIVERED
+delivered_uuid_path_list="${APPLICATION_TMP_DATA_PATH}/tmp.${uuid}_DELIVERED_UUID_PATHS.list"
+find -L "${DELIVERED_PATH}"  -maxdepth 1 -type d -regextype posix-extended -regex ".*_[0-9a-fA-F-]+_[0-9]{8}" > "${delivered_uuid_path_list}"
+
+#####################################################
+## and from the REJECTED
+rejected_uuid_path_list="${APPLICATION_TMP_DATA_PATH}/tmp.${uuid}_REJECTED_UUID_PATHS.list"
+find -L "${REJECTED_PATH}"  -maxdepth 1 -type d -regextype posix-extended -regex ".*_[0-9a-fA-F-]+_[0-9]{8}" > "${rejected_uuid_path_list}"
+
+#####################################################
+## now we scan all the LISTS, and check if we are good or not
+## !!!! this is this step that write good results in stdout and errors/warnings in stderr !!!!
+gawk -v debug="${DEBUG}" -v regex_file="${REGEX_FILE}" -v timestamp="${timestamp}" -v no_header="$NO_HEADER" -f "${DRAGEN_VALIDATOR_DIR}/bin/generate_delivery_list.awk" "${PROVIDER_flags_list}" "${MY_ORG_flags_list}" "${dropbox_uuid_path_list}" "${delivered_uuid_path_list}" "${rejected_uuid_path_list}"
+
+#####################################################
+## we clean the mess if we are not in debug mode
+## or keep it if not
+files=("${PROVIDER_flags_list}" "${MY_ORG_flags_list}" "${dropbox_uuid_path_list}" "${delivered_uuid_path_list}" "${rejected_uuid_path_list}")
+if [ "${DEBUG}" -ne 1 ]; then
+    rm "${files[@]}"
+else
+    echo "#####################################################" >&2
+    echo "" >&2
+    echo "DEBUG_MODE:" >&2
+    for file in "${files[@]}"; do
+        echo "$file" >&2
+    done
+    echo "#####################################################" >&2
+fi

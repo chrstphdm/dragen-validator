@@ -1,0 +1,53 @@
+
+setup_suite(){
+    if [ -z "${SCRIPT_PATH}" ]; then
+        SCRIPT_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/generate_delivery_list.sh"
+    fi
+    
+    test_data_path=$(mktemp -d --suffix "_TEST_2_CASED_FORCED")
+
+    mkdir -p "${test_data_path}/DROPBOX"
+    mkdir -p "${test_data_path}/DELIVERED"
+    mkdir -p "${test_data_path}/REJECTED"
+    mkdir -p "${test_data_path}/PROVIDER_FLAGS"
+    mkdir -p "${test_data_path}/MY_ORG_FLAGS"
+
+    current_uuid=$(uuidgen)
+    execution_day=$(date "+%Y%m%d")
+    dropbox_uuid="410_${current_uuid}_${execution_day}"
+
+    mkdir -p "${test_data_path}/DROPBOX/${dropbox_uuid}"
+}
+
+teardown_suite(){
+    rm -rf "${test_data_path}" 
+}
+
+
+test_forced_flag_empty(){
+    
+    truncate -s 0 "${test_data_path}/PROVIDER_FLAGS/${dropbox_uuid}.FORCED"
+
+    stdout_file=$(mktemp --suffix "_EMPTY.stdout")
+    stderr_file=$(mktemp --suffix "_EMPTY.stderr")
+    assert "DATA_ROOT_PATH=${test_data_path} NO_HEADER=1 ${SCRIPT_PATH} >$stdout_file 2>$stderr_file"
+    stdout_content=$(cat "$stdout_file")
+    stderr_content=$(cat "$stderr_file")
+    assert_matches "PROVIDER_TO_CHECK:FLAG_FILE_EMPTY" "${stderr_content}"
+
+    rm "${stdout_file}" "${stderr_file}"
+}
+
+test_forced_flag_not_empty(){
+        
+    echo "FAKE REASON" > "${test_data_path}/PROVIDER_FLAGS/${dropbox_uuid}.FORCED"
+
+    stdout_file=$(mktemp --suffix "_NOTEMPTY.stdout")
+    stderr_file=$(mktemp --suffix "_NOTEMPTY.stdout")
+    assert "DATA_ROOT_PATH=${test_data_path} NO_HEADER=1 ${SCRIPT_PATH} >$stdout_file 2>$stderr_file"
+    stdout_content=$(cat "$stdout_file")
+    stderr_content=$(cat "$stderr_file")
+    assert_matches "FAKE REASON" "${stdout_content}"
+
+    rm "${stdout_file}" "${stderr_file}"
+}

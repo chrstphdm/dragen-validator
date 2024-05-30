@@ -1,0 +1,45 @@
+.TH GENERATE_DELIVERY_LIST 1
+.SH NAME
+generate_delivery_list \- generate a delivery list and flag problematic DRAGEN results.
+.SH SYNOPSIS
+.B generate_delivery_list
+.RI [ > output_file] [2> error_file]
+.RI [| pspg --tsv]
+.SH DESCRIPTION
+The \fIgenerate_delivery_list\fP command generates a list of DRAGEN results for quality validation processes, detailing any issues encountered. It's designed to assist in the identification of DRAGEN results that can be further analyzed or that have problems requiring attention.
+.SH OPTIONS
+This command does not take any options. However, the output can be redirected using shell redirections or piped into other programs.
+.SH EXAMPLES
+Standard usage:
+.B generate_delivery_list
+
+With debug mode enabled:
+.B DEBUG=1 generate_delivery_list
+
+Suppressing the header output:
+.B NO_HEADER=1 generate_delivery_list
+
+Separating standard output and standard error:
+.B generate_delivery_list > delivery_list.tsv 2> error_list.tsv
+
+Ignoring standard output:
+.B generate_delivery_list > /dev/null
+
+Ignoring standard error:
+.B generate_delivery_list 2> /dev/null
+
+Piping output into 'pspg' for tabular data viewing:
+.B generate_delivery_list | pspg --tsv
+
+Redirecting both stdout and stderr, then piping into 'pspg':
+.B generate_delivery_list 2>&1 | pspg --tsv
+
+Displaying stderr using 'pspg':
+.B generate_delivery_list 2>&1 >/dev/null | pspg --tsv
+
+Running in debug mode and using 'pspg':
+.B DEBUG=1 generate_delivery_list 2>&1 | pspg --tsv
+.SH SEE ALSO
+dragen-validator(1)
+.SH AUTHOR
+Christophe Demay

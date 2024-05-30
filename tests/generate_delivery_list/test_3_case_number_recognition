@@ -1,0 +1,75 @@
+SCRIPT_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/generate_delivery_list.sh"
+
+
+setup_suite(){
+    if [ -z "${SCRIPT_PATH}" ]; then
+        SCRIPT_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/generate_delivery_list.sh"
+    fi
+    
+    test_data_path=$(mktemp -d --suffix "_TEST_3_CASE_NUMBER_RECOGNITION")
+    execution_day=$(date "+%Y%m%d")
+    echo "CREATING DATA FOR TESTS..."
+    ## let's generate all the cases possible
+    ## and use the case number as folder name
+    for i in {0..7}; do
+        
+        binary_data_folder=$(printf "%03d" $(bc <<< "obase=2;$i"))
+        uuid_in_dropbox=${binary_data_folder:0:1}
+        uuid_in_delivered=${binary_data_folder:1:1}
+        uuid_in_rejected=${binary_data_folder:2:1}
+
+        for j in {1..7}; do
+
+            binary_PROVIDER_flag=$(printf "%03d" $(bc <<< "obase=2;$j"))
+            uuid_flagged_pass=${binary_PROVIDER_flag:0:1}
+            uuid_flagged_legacy=${binary_PROVIDER_flag:1:1}
+            uuid_flagged_forced_pass=${binary_PROVIDER_flag:2:1}
+
+            for k in {0..7}; do
+                binary_MY_ORG_flag=$(printf "%03d" $(bc <<< "obase=2;$k"))
+                uuid_flagged_delivered=${binary_MY_ORG_flag:0:1}
+                uuid_flagged_to_review=${binary_MY_ORG_flag:1:1}
+                uuid_flagged_rejected=${binary_MY_ORG_flag:2:1}
+
+                sample_id="${i}${j}${k}"
+                current_DATA_ROOT_PATH="${test_data_path}/${sample_id}"
+
+                current_uuid=$(uuidgen)
+                dropbox_uuid="${sample_id}_${current_uuid}_${execution_day}"
+
+                mkdir -p "${current_DATA_ROOT_PATH}"
+                mkdir -p "${current_DATA_ROOT_PATH}/DROPBOX"
+                mkdir -p "${current_DATA_ROOT_PATH}/DELIVERED"
+                mkdir -p "${current_DATA_ROOT_PATH}/REJECTED"
+                mkdir -p "${current_DATA_ROOT_PATH}/PROVIDER_FLAGS"
+                mkdir -p "${current_DATA_ROOT_PATH}/MY_ORG_FLAGS"
+
+                [ "$uuid_in_dropbox" -eq 1 ] && mkdir -p "${current_DATA_ROOT_PATH}/DROPBOX/${dropbox_uuid}"
+                [ "$uuid_in_delivered" -eq 1 ] && mkdir -p "${current_DATA_ROOT_PATH}/DELIVERED/${dropbox_uuid}"
+                [ "$uuid_in_rejected" -eq 1 ] && mkdir -p "${current_DATA_ROOT_PATH}/REJECTED/${dropbox_uuid}"
+
+                [ "$uuid_flagged_pass" -eq 1 ] && touch "${current_DATA_ROOT_PATH}/PROVIDER_FLAGS/${dropbox_uuid}.PASS"
+                [ "$uuid_flagged_legacy" -eq 1 ] && touch "${current_DATA_ROOT_PATH}/PROVIDER_FLAGS/${dropbox_uuid}.LEGACY"
+                [ "$uuid_flagged_forced_pass" -eq 1 ] && touch "${current_DATA_ROOT_PATH}/PROVIDER_FLAGS/${dropbox_uuid}.FORCED"
+
+                [ "$uuid_flagged_delivered" -eq 1 ] && touch "${current_DATA_ROOT_PATH}/MY_ORG_FLAGS/${dropbox_uuid}.DELIVERED"
+                [ "$uuid_flagged_to_review" -eq 1 ] && touch "${current_DATA_ROOT_PATH}/MY_ORG_FLAGS/${dropbox_uuid}.TO_REVIEW"
+                [ "$uuid_flagged_rejected" -eq 1 ] && touch "${current_DATA_ROOT_PATH}/MY_ORG_FLAGS/${dropbox_uuid}.REJECTED"
+
+            done
+        done
+    done
+
+}
+
+teardown_suite(){
+    rm -rf "${test_data_path}" 
+}
+
+test_detect_case_number() {
+    while IFS= read -r current_dir ;do
+        case_number=$(basename "${current_dir}")
+        rez=$(DATA_ROOT_PATH="${current_dir}" NO_HEADER="1" bash "${SCRIPT_PATH}" 2>&1 | cut -f 5)
+        assert_equals "${case_number}" "${rez}"
+    done < <(find "${test_data_path}" -mindepth 1 -maxdepth 1 -type d)
+}

@@ -1,0 +1,232 @@
+setup_suite(){
+    ## $1: dropbox_uuid_path
+    ## $2: sample_id
+    ## $3: skip_optionnals ; 1=true | (0 or empty)=false
+    if [ -z "${SCRIPT_PATH}" ]; then
+        SCRIPT_PATH="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh"
+    fi
+
+}
+
+setup(){
+    test_data_path=$(mktemp -d --suffix "_TEST_3_CASE_NUMBER_RECOGNITION")
+}
+
+teardown(){
+    rm -rf "${test_data_path}" 
+}
+
+test_check_folder_no_folder(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    assert_equals "    not ok 1 - not_a_folder folder does not exist" "$(check_folder "/tmp/not_a_folder" "not_a_folder")"
+}
+
+test_check_folder_with_folder_existing(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    mkdir "${test_data_path}/a_folder"
+    assert_equals "    ok 1 - a_folder folder exists" "$(check_folder "${test_data_path}/a_folder" "a_folder" | head -n 1)"
+}
+
+test_check_folder_with_folder_readable(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    mkdir "${test_data_path}/a_folder"
+    assert_equals "    ok 2 - a_folder folder is readable" "$(check_folder "${test_data_path}/a_folder" "a_folder" | tail -n 1)"
+}
+
+test_check_folder_with_folder_not_readable(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    mkdir "${test_data_path}/a_folder_not_readable"
+    chmod a-r "${test_data_path}/a_folder_not_readable"
+    assert_equals "    not ok 2 - a_folder_not_readable folder is not readable" "$(check_folder "${test_data_path}/a_folder_not_readable" "a_folder_not_readable" | tail -n 1)"
+}
+
+test_check_file_existence_no_file(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    assert_equals "    not ok 1 - file not_a_file is missing not_a_file" "$(check_file_existence "/tmp/not_a_file" "not_a_file")"
+}
+
+test_check_file_existence_file_not_readable(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    touch "${test_data_path}/file_not_redable"
+    chmod a-r "${test_data_path}/file_not_redable"
+    assert_equals "    not ok 2 - file file_not_redable is not readable " "$(check_file_existence "${test_data_path}/file_not_redable" | tail -n 1)"
+}
+
+test_check_file_existence_file_exists(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    touch "${test_data_path}/file_ok"
+    assert_equals "    ok 1 - file file_ok exists " "$(check_file_existence "${test_data_path}/file_ok" | head -n 1)"
+}
+
+test_check_file_existence_file_readable(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    touch "${test_data_path}/file_ok"
+    assert_equals "    ok 2 - file file_ok is readable " "$(check_file_existence "${test_data_path}/file_ok" | tail -n 1)"
+}
+
+test_check_pattern_file_existence(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    touch "${test_data_path}/good_file_usage.txt"
+    assert_matches "^    ok 1 - at least one file with pattern" "$(check_pattern_file_existence "${test_data_path}" "*_usage.txt" )"
+    touch "${test_data_path}/dragen_run_qweqweqwe.log"
+    assert_matches "^    ok 1 - at least one file with pattern" "$(check_pattern_file_existence "${test_data_path}" "dragen_run_*.log" )"
+}
+
+test_check_pattern_file_not_exists(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    assert_matches "^    not ok 1 - NO file with pattern " "$(check_pattern_file_existence "${test_data_path}" "*_usage.txt" )"
+    assert_matches "^    not ok 1 - NO file with pattern " "$(check_pattern_file_existence "${test_data_path}" "dragen_run_*.log" )"
+}
+
+test_check_file_content_empty(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    touch "${test_data_path}/file_empty"
+    assert_equals "    not ok 1 - file file_empty is empty " "$(check_file_content "${test_data_path}/file_empty" | head -n 1)"
+}
+
+test_check_file_content_not_empty(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    echo "not_empty" > "${test_data_path}/file_not_empty"
+    assert_equals "    ok 1 - file file_not_empty is not empty " "$(check_file_content "${test_data_path}/file_not_empty" | head -n 1)"
+}
+
+test_samtools_available(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    path_binary=$(command -v samtools 2> /dev/null)
+    assert_not_equals "" "${path_binary}" "samtools is not correctly loaded"
+}
+
+test_check_sample_id_in_cram_is_ok(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    cram_filepath="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../tests/data/U1a.cram"
+    assert_equals "    ok 1 - 'SM:U1a' field of U1a.cram is correct" "$(check_sample_id_in_cram "${cram_filepath}" "U1a")"
+}
+
+test_check_sample_id_in_cram_is_not_ok(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    cram_filepath="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../tests/data/U1a.cram"
+    assert_equals "    not ok 1 - 'SM:XXXXXX' field of U1a.cram is not correct" "$(check_sample_id_in_cram "${cram_filepath}" "XXXXXX")"
+}
+
+test_check_md5sum_is_ok(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    md5_filepath="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../tests/data/U1a.cram.md5sum"
+    assert_equals "" "$(check_md5sum "${md5_filepath}")"
+}
+
+test_check_md5sum_not_exists(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    assert_equals "    not ok 1 - md5sum file fake.md5sum does not exists " "$(check_md5sum "${test_data_path}/fake.md5sum")"
+}
+
+test_check_md5sum_not_corresponding(){
+    # shellcheck source=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../bin/check_basics.sh
+    source "${SCRIPT_PATH}"
+    echo "luhweoiusdagfiusadgfoiug" > "${test_data_path}/fake.md5sum"
+    assert_equals "" "$(check_md5sum "${test_data_path}/fake.md5sum")"
+}
+
+# check_md5sum() {
+#     (( nb_tests++ )) || true
+#     md5_file="${1}"
+#     if [[ ! -e "${md5_file}" ]]; then
+#         echo "    not ok ${nb_tests} - md5sum verification for $(basename "${md5_file}") is not possible ${2}"
+#     else
+#         normal_file=$(basename "${1}" .md5sum)
+#         md5_stdout=$(echo "$(cat "${md5_file}") ${dropbox_uuid_path}/${normal_file}" | md5sum -c - 2>/dev/null)
+#         # shellcheck disable=SC2181
+#         if [[ $? -ne 0 ]]; then
+#             if [[ "${2}" == "" ]]; then ## no skip_optionnals_str for this test
+#                 flag_ok=0
+#             fi
+#         fi
+#         echo "${md5_stdout}" | awk -v nb="${nb_tests}" -v skip_optionnals_str="${2}" 'BEGIN{FS="(: |/)"}$NF ~ /OK|FAILED/{
+#             if($NF == "OK"){
+#                 printf "    ok %i - md5sum verification for %s is correct %s\n", nb, $(NF-1), skip_optionnals_str
+#             } else {
+#                 printf "    not ok %i - md5sum verification for %s is not correct %s\n", nb, $(NF-1), skip_optionnals_str
+#             }
+#         }' -
+#     fi
+# }
+
+# ## Main script
+# current_test_name=$(basename "$0" .sh)
+# dropbox_uuid_path="${1}"
+# sample_id="${2}"
+# skip_optionnals="${3}"
+
+# flag_ok=1
+# nb_tests=0
+# skip_optionnals_str=""
+# if [[ "${skip_optionnals}" -eq 1 ]]; then
+#     skip_optionnals_str="# SKIP"
+# fi
+
+# echo "# Subtest: ${current_test_name}"
+
+# check_folder "$dropbox_uuid_path" "dropbox_uuid"
+
+# mandatory_files=(\
+# # shellcheck disable=SC1143
+# # "cram" "cram.crai" "cram.md5sum" \
+# "hard-filtered.gvcf.gz" "hard-filtered.gvcf.gz.tbi" "hard-filtered.gvcf.gz.md5sum" \
+# "hard-filtered.vcf.gz" "hard-filtered.vcf.gz.tbi" "hard-filtered.vcf.gz.md5sum" \
+# "targeted.vcf.gz" "targeted.vcf.gz.tbi" "targeted.vcf.gz.md5sum" \
+# "mapping_metrics.csv" "wgs_overall_mean_cov.csv" "wgs_coverage_metrics.csv" "ploidy_estimation_metrics.csv")
+# for i in "${!mandatory_files[@]}"; do
+#     file_type="${mandatory_files[$i]}"
+#     file_path="${dropbox_uuid_path}/${sample_id}.${mandatory_files[$i]}"
+
+#     check_file_existence "$file_path"
+#     check_file_content "$file_path"
+
+#     if [[ "$file_type" == *".md5sum" ]]; then
+#         check_md5sum "$file_path"
+#     fi
+# done
+
+# optional_files=(
+# "cnv.vcf.gz" "cnv.vcf.gz.tbi" "cnv.vcf.gz.md5sum" \
+# "cnv_sv.vcf.gz" "cnv_sv.vcf.gz.tbi" "cnv_sv.vcf.gz.md5sum" \
+# "ploidy.vcf.gz" "ploidy.vcf.gz.tbi" "ploidy.vcf.gz.md5sum")
+# for i in "${!optional_files[@]}"; do
+#     file_type="${optional_files[$i]}"
+#     file_path="${dropbox_uuid_path}/${sample_id}.${optional_files[$i]}"
+
+#     check_file_existence "$file_path" "${skip_optionnals_str}"
+#     check_file_content "$file_path" "${skip_optionnals_str}"
+
+#     if [[ "$file_type" == *".md5sum" ]]; then
+#         check_md5sum "$file_path" "${skip_optionnals_str}"
+#     fi
+# done
+
+# check_sample_id_in_cram "${dropbox_uuid_path}/${sample_id}.cram" "$sample_id"
+# check_pattern_file_existence "${dropbox_uuid_path}" "*_usage.txt"
+# check_pattern_file_existence "${dropbox_uuid_path}" "*_dragen_output.log"
+# check_pattern_file_existence "${dropbox_uuid_path}" "dragen_run_*.log"
+
+# echo "    1..${nb_tests}"
+# if [[ "$flag_ok" -eq 1 ]]; then
+#     echo "ok - ${current_test_name}"
+# else
+#     echo "nok - ${current_test_name}"
+# fi

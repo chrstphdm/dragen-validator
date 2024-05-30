@@ -1,0 +1,6 @@
+garbage/
+tests/data
+.nextflow*
+work/
+*.log
+releases/dragen-validator*
